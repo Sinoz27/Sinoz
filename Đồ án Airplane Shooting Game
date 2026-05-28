@@ -1,0 +1,470 @@
+import pygame, random, json, os
+
+pygame.init()
+
+# ===== WINDOW =====
+WIDTH, HEIGHT = 600, 800
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Airplane Shooter FINAL")
+
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("Arial", 22)
+
+# ===== SAVE =====
+SAVE_FILE = "save.json"
+
+if not os.path.exists(SAVE_FILE):
+    with open(SAVE_FILE, "w") as f:
+        json.dump({"highscore": 0, "coins": 0}, f)
+
+def load_data():
+    with open(SAVE_FILE) as f:
+        return json.load(f)
+
+def save_data(data):
+    with open(SAVE_FILE, "w") as f:
+        json.dump(data, f)
+
+data = load_data()
+
+# ===== PLAYER =====
+player_x = WIDTH // 2
+player_y = HEIGHT - 120
+
+player_hp = 100
+player_speed = 6
+
+gun_level = 1
+bombs = 3
+
+# ===== SHOOT =====
+shoot_timer = 0
+auto_fire = False
+
+# ===== GAME =====
+bullets = []
+boss_bullets = []
+enemies = []
+explosions = []
+
+boss = None
+boss_hp = 0
+boss_dir = 4
+
+score = 0
+level = 1
+kill = 0
+frame = 0
+
+state = "menu"
+paused = False
+
+# ===== BACKGROUND =====
+stars = [[random.randint(0, WIDTH), random.randint(0, HEIGHT)] for _ in range(80)]
+
+def draw_bg():
+    for s in stars:
+        pygame.draw.circle(screen, (255, 255, 255), s, 2)
+        s[1] += 4
+
+        if s[1] > HEIGHT:
+            s[1] = 0
+            s[0] = random.randint(0, WIDTH)
+
+# ===== PLAYER =====
+def draw_player(x, y):
+
+    # body
+    pygame.draw.polygon(screen, (200, 200, 255), [
+        (x, y),
+        (x - 18, y + 50),
+        (x + 18, y + 50)
+    ])
+
+    # wings
+    pygame.draw.polygon(screen, (120, 120, 255), [
+        (x - 18, y + 25),
+        (x - 40, y + 40),
+        (x - 10, y + 40)
+    ])
+
+    pygame.draw.polygon(screen, (120, 120, 255), [
+        (x + 18, y + 25),
+        (x + 40, y + 40),
+        (x + 10, y + 40)
+    ])
+
+    # cockpit
+    pygame.draw.circle(screen, (0, 255, 255), (x, y + 15), 6)
+
+# ===== ENEMY =====
+def draw_enemy(x, y):
+
+    pygame.draw.polygon(screen, (255, 60, 60), [
+        (x, y),
+        (x - 15, y + 35),
+        (x + 15, y + 35)
+    ])
+
+    pygame.draw.polygon(screen, (180, 0, 0), [
+        (x - 15, y + 20),
+        (x - 28, y + 35),
+        (x - 10, y + 35)
+    ])
+
+    pygame.draw.polygon(screen, (180, 0, 0), [
+        (x + 15, y + 20),
+        (x + 28, y + 35),
+        (x + 10, y + 35)
+    ])
+
+# ===== BOSS =====
+def draw_boss(x, y):
+
+    pygame.draw.polygon(screen, (255, 0, 0), [
+        (x, y),
+        (x - 60, y + 40),
+        (x + 60, y + 40)
+    ])
+
+    pygame.draw.rect(screen, (150, 0, 0), (x - 70, y + 20, 140, 25))
+
+    pygame.draw.circle(screen, (255, 255, 0), (x, y + 12), 10)
+
+# ===== SHOOT =====
+def shoot():
+    global bullets
+
+    if gun_level == 1:
+        bullets.append([player_x, player_y, 0])
+
+    elif gun_level == 2:
+        bullets.append([player_x - 10, player_y, -2])
+        bullets.append([player_x + 10, player_y, 2])
+
+    else:
+        bullets.append([player_x, player_y, 0])
+        bullets.append([player_x - 15, player_y, -3])
+        bullets.append([player_x + 15, player_y, 3])
+
+# ===== EFFECT =====
+def explosion(x, y):
+    explosions.append([x, y, 10])
+
+def draw_explosions():
+    for e in explosions[:]:
+
+        pygame.draw.circle(screen, (255, 120, 0), (e[0], e[1]), e[2])
+
+        e[2] += 2
+
+        if e[2] > 35:
+            explosions.remove(e)
+
+# ===== RESET GAME =====
+def reset_game():
+    global player_hp, score, level, kill
+    global enemies, bullets, boss_bullets
+    global boss, boss_hp
+    global player_x, player_y
+
+    player_hp = 100
+    score = 0
+    level = 1
+    kill = 0
+
+    enemies.clear()
+    bullets.clear()
+    boss_bullets.clear()
+
+    boss = None
+    boss_hp = 0
+
+    player_x = WIDTH // 2
+    player_y = HEIGHT - 120
+
+# ===== MAIN LOOP =====
+running = True
+
+while running:
+
+    clock.tick(60)
+
+    screen.fill((0, 0, 0))
+
+    draw_bg()
+
+    # ===== EVENTS =====
+    for event in pygame.event.get():
+
+        if event.type == pygame.QUIT:
+            running = False
+
+        # ===== MENU =====
+        if state == "menu":
+
+            if event.type == pygame.KEYDOWN:
+                reset_game()
+                state = "play"
+
+        # ===== PLAY =====
+        elif state == "play":
+
+            if event.type == pygame.KEYDOWN:
+
+                if event.key == pygame.K_p:
+                    paused = not paused
+
+                # bomb
+                if event.key == pygame.K_x and bombs > 0:
+                    enemies.clear()
+                    bombs -= 1
+
+                # auto fire
+                if event.key == pygame.K_f:
+                    auto_fire = not auto_fire
+
+    keys = pygame.key.get_pressed()
+
+    # ===== MENU =====
+    if state == "menu":
+
+        title = font.render("AIRPLANE SHOOTER", True, (255, 255, 255))
+        start = font.render("Press Any Key To Start", True, (255, 255, 0))
+        high = font.render(f"Highscore: {data['highscore']}", True, (0, 255, 255))
+
+        screen.blit(title, (170, 300))
+        screen.blit(start, (170, 340))
+        screen.blit(high, (210, 390))
+
+    # ===== PLAY =====
+    elif state == "play":
+
+        if paused:
+
+            pause_text = font.render("PAUSED", True, (255, 255, 0))
+            screen.blit(pause_text, (260, 350))
+
+            pygame.display.update()
+            continue
+
+        frame += 1
+
+        # ===== MOVE =====
+        if keys[pygame.K_LEFT] and player_x > 40:
+            player_x -= player_speed
+
+        if keys[pygame.K_RIGHT] and player_x < WIDTH - 40:
+            player_x += player_speed
+
+        # ===== SHOOT =====
+        if shoot_timer > 0:
+            shoot_timer -= 1
+
+        if (keys[pygame.K_SPACE] or auto_fire) and shoot_timer == 0:
+            shoot()
+            shoot_timer = 10
+
+        # ===== SPAWN ENEMY =====
+        if frame % 40 == 0 and boss is None:
+
+            enemies.append([
+                random.randint(50, WIDTH - 50),
+                -50
+            ])
+
+        # ===== BOSS SPAWN =====
+        if level % 3 == 0 and boss is None:
+
+            boss = [WIDTH // 2, 60]
+
+            boss_hp = 300 + level * 50
+
+        # ===== BOSS MOVE =====
+        if boss:
+
+            boss[0] += boss_dir
+
+            if boss[0] <= 80 or boss[0] >= WIDTH - 80:
+                boss_dir *= -1
+
+            # boss shoot
+            if frame % 45 == 0:
+
+                boss_bullets.append([boss[0] - 30, boss[1] + 40])
+                boss_bullets.append([boss[0], boss[1] + 40])
+                boss_bullets.append([boss[0] + 30, boss[1] + 40])
+
+        # ===== UPDATE BULLETS =====
+        for b in bullets:
+            b[1] -= 12
+            b[0] += b[2]
+
+        bullets = [b for b in bullets if b[1] > -20]
+
+        # ===== UPDATE ENEMY =====
+        for e in enemies:
+            e[1] += 4
+
+        # ===== UPDATE BOSS BULLETS =====
+        for bb in boss_bullets:
+            bb[1] += 7
+
+        boss_bullets = [bb for bb in boss_bullets if bb[1] < HEIGHT]
+
+        # =================================================
+        # ENEMY HIT PLAYER = DIE
+        # =================================================
+        for e in enemies[:]:
+
+            # enemy touches player
+            if abs(e[0] - player_x) < 35 and abs(e[1] - player_y) < 40:
+
+                explosion(player_x, player_y)
+
+                player_hp = 0
+
+        # =================================================
+        # ENEMY HIT BY BULLET
+        # =================================================
+        for e in enemies[:]:
+
+            for b in bullets[:]:
+
+                if abs(e[0] - b[0]) < 20 and abs(e[1] - b[1]) < 20:
+
+                    explosion(e[0], e[1])
+
+                    if e in enemies:
+                        enemies.remove(e)
+
+                    if b in bullets:
+                        bullets.remove(b)
+
+                    score += 10
+                    kill += 1
+                    data["coins"] += 1
+
+                    break
+
+        # =================================================
+        # BOSS HIT BY BULLET
+        # =================================================
+        if boss:
+
+            for b in bullets[:]:
+
+                if abs(boss[0] - b[0]) < 70 and abs(boss[1] - b[1]) < 50:
+
+                    boss_hp -= 5
+
+                    explosion(b[0], b[1])
+
+                    if b in bullets:
+                        bullets.remove(b)
+
+            # boss dead
+            if boss_hp <= 0:
+
+                explosion(boss[0], boss[1])
+
+                score += 200
+
+                level += 1
+
+                boss = None
+
+        # =================================================
+        # BOSS COLLIDE PLAYER = DIE
+        # =================================================
+        if boss:
+
+            if abs(boss[0] - player_x) < 70 and abs(boss[1] - player_y) < 70:
+
+                explosion(player_x, player_y)
+
+                player_hp = 0
+
+        # =================================================
+        # BOSS BULLET HIT PLAYER
+        # =================================================
+        for bb in boss_bullets[:]:
+
+            if abs(bb[0] - player_x) < 25 and abs(bb[1] - player_y) < 40:
+
+                player_hp -= 10
+
+                explosion(bb[0], bb[1])
+
+                if bb in boss_bullets:
+                    boss_bullets.remove(bb)
+
+        # ===== LEVEL UP =====
+        if kill >= 20:
+
+            level += 1
+
+            kill = 0
+
+            # gun upgrade
+            if gun_level < 3:
+                gun_level += 1
+
+        # ===== GAME OVER =====
+        if player_hp <= 0:
+
+            if score > data["highscore"]:
+                data["highscore"] = score
+
+            save_data(data)
+
+            state = "menu"
+
+        # ===== DRAW PLAYER =====
+        draw_player(player_x, player_y)
+
+        # ===== DRAW BULLETS =====
+        for b in bullets:
+
+            pygame.draw.circle(screen, (255, 255, 0), (b[0], b[1]), 5)
+
+        # ===== DRAW ENEMIES =====
+        for e in enemies:
+
+            draw_enemy(e[0], e[1])
+
+        # ===== DRAW BOSS BULLETS =====
+        for bb in boss_bullets:
+
+            pygame.draw.circle(screen, (255, 0, 255), (bb[0], bb[1]), 6)
+
+        # ===== DRAW BOSS =====
+        if boss:
+
+            draw_boss(boss[0], boss[1])
+
+            pygame.draw.rect(screen, (100, 0, 0), (120, 10, 360, 20))
+
+            pygame.draw.rect(
+                screen,
+                (255, 0, 0),
+                (120, 10, boss_hp / 2, 20)
+            )
+
+        # ===== EFFECT =====
+        draw_explosions()
+
+        # ===== UI =====
+        screen.blit(font.render(f"HP: {player_hp}", True, (255, 0, 0)), (10, 10))
+
+        screen.blit(font.render(f"Score: {score}", True, (255, 255, 255)), (10, 40))
+
+        screen.blit(font.render(f"Level: {level}", True, (0, 255, 255)), (10, 70))
+
+        screen.blit(font.render(f"Coins: {data['coins']}", True, (255, 255, 0)), (10, 100))
+
+        screen.blit(font.render(f"Bombs: {bombs}", True, (255, 100, 100)), (10, 130))
+
+    pygame.display.update()
+
+pygame.quit()
